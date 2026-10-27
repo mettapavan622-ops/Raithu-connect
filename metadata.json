@@ -1,0 +1,8 @@
+{
+  "name": "RaithuConnect — Local Harvest, Direct Trade",
+  "description": "Farmer marketplace connecting growers in Hyderabad and nearby rural mandals directly with households, restaurants, and retailers for pickup-based trade.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
