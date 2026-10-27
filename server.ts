@@ -3,8 +3,8 @@ import cookieParser from 'cookie-parser';
 import path from 'path';
 import dotenv from 'dotenv';
 import { createServer as createViteServer } from 'vite';
-import { createApiRouter } from './src/server/routes';
-import { runSeed } from './src/server/seed';
+import { createApiRouter } from './src/server/routes.ts';
+import { runSeed } from './src/server/seed.ts';
 
 dotenv.config();
 

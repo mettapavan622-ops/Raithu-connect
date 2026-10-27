@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type } from '@google/genai';
-import { ListingDraftResult } from '../shared/types';
+import type { ListingDraftResult } from '../shared/types.ts';
 
 export async function generateListingDraft(
   input: string,

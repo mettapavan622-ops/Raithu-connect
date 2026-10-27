@@ -1,5 +1,5 @@
-import { db } from './db';
-import { MarketplaceService } from './services';
+import { db } from './db.ts';
+import { MarketplaceService } from './services.ts';
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 

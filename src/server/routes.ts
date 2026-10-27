@@ -1,8 +1,9 @@
-import { Router, Request, Response, NextFunction } from 'express';
+import express from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
-import { MarketplaceService, marketplaceService } from './services';
-import { generateListingDraft } from './ai';
+import { MarketplaceService, marketplaceService } from './services.ts';
+import { generateListingDraft } from './ai.ts';
 import {
   registerSchema,
   loginSchema,
@@ -13,15 +14,15 @@ import {
   listingReportSchema,
   moderationActionSchema,
   aiDraftSchema,
-} from '../shared/schemas';
-import { User } from '../shared/types';
+} from '../shared/schemas.ts';
+import type { User } from '../shared/types.ts';
 
 export interface AuthenticatedRequest extends Request {
   user?: User;
 }
 
-export function createApiRouter(service: MarketplaceService = marketplaceService): Router {
-  const router = Router();
+export function createApiRouter(service: MarketplaceService = marketplaceService) {
+  const router = express.Router();
 
   // Helper to set session cookie & CSRF cookie
   const setAuthCookies = (res: Response, token: string) => {

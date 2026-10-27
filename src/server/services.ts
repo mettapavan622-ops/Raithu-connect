@@ -1,8 +1,8 @@
-import { Database as BetterSqliteDatabase } from 'better-sqlite3';
-import { db as defaultDb } from './db';
+import type { Database as BetterSqliteDatabase } from 'better-sqlite3';
+import { db as defaultDb } from './db.ts';
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
-import {
+import type {
   User,
   FarmerProfile,
   Product,
@@ -15,10 +15,14 @@ import {
   ProduceCategory,
   ProduceUnit,
   ProductStatus,
-} from '../shared/types';
+} from '../shared/types.ts';
 
 export class MarketplaceService {
-  constructor(private db: BetterSqliteDatabase = defaultDb) {}
+  private db: BetterSqliteDatabase;
+
+  constructor(db: BetterSqliteDatabase = defaultDb) {
+    this.db = db;
+  }
 
   // --- Auth & Users ---
   getUserByEmail(email: string): (User & { password_hash: string }) | null {

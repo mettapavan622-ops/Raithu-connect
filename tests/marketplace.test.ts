@@ -2,9 +2,9 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import Database from 'better-sqlite3';
 import fs from 'fs';
 import path from 'path';
-import { createDb } from '../src/server/db';
-import { MarketplaceService } from '../src/server/services';
-import { generateListingDraft } from '../src/server/ai';
+import { createDb } from '../src/server/db.ts';
+import { MarketplaceService } from '../src/server/services.ts';
+import { generateListingDraft } from '../src/server/ai.ts';
 import bcrypt from 'bcryptjs';
 
 const TEST_DB_PATH = path.resolve(process.cwd(), 'data', 'test_marketplace.db');
