@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Calendar,
   MapPin,
@@ -37,6 +38,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   isComparing = false,
   onToggleCompare,
 }) => {
+  const { t } = useTranslation();
   const { addToCart } = useCart();
   const [imageError, setImageError] = React.useState(false);
   const [addedNotice, setAddedNotice] = React.useState(false);
@@ -172,28 +174,28 @@ export const ProductCard: React.FC<ProductCardProps> = ({
           {/* 8 Mandatory Display Specs Grid */}
           <div className="grid grid-cols-2 gap-x-2 gap-y-1.5 text-xs text-stone-700 bg-stone-50 p-2.5 rounded-lg mb-3 border border-stone-200/60">
             <div>
-              <span className="text-[10px] uppercase tracking-wider text-stone-400 block font-medium">Available</span>
+              <span className="text-[10px] uppercase tracking-wider text-stone-500 block font-semibold">{t('marketplace.available')}</span>
               <span className="font-semibold text-stone-900">
                 {formatUnitQuantity(product.availableQuantity, product.unit)}
               </span>
             </div>
 
             <div>
-              <span className="text-[10px] uppercase tracking-wider text-stone-400 block font-medium">Harvest Date</span>
+              <span className="text-[10px] uppercase tracking-wider text-stone-500 block font-semibold">{t('marketplace.harvestDate')}</span>
               <span className="font-medium text-stone-800">
                 {formatDateKolkata(product.harvestDate)}
               </span>
             </div>
 
             <div>
-              <span className="text-[10px] uppercase tracking-wider text-stone-400 block font-medium">Pickup Ready</span>
+              <span className="text-[10px] uppercase tracking-wider text-stone-500 block font-semibold">{t('marketplace.availabilityDate')}</span>
               <span className="font-medium text-stone-800">
                 {formatDateKolkata(product.availabilityDate)}
               </span>
             </div>
 
             <div>
-              <span className="text-[10px] uppercase tracking-wider text-stone-400 block font-medium">Stock Updated</span>
+              <span className="text-[10px] uppercase tracking-wider text-stone-500 block font-semibold">{t('marketplace.lastStockUpdate')}</span>
               <span className="font-medium text-stone-600 text-[11px]">
                 {formatDateTimeKolkata(product.updatedAt).split(',')[0]}
               </span>
@@ -219,17 +221,17 @@ export const ProductCard: React.FC<ProductCardProps> = ({
               e.stopPropagation();
               onSelect(product);
             }}
-            className="flex-1 bg-stone-100 hover:bg-stone-200 text-stone-800 text-xs font-semibold py-2 px-3 rounded-md transition-colors flex items-center justify-center gap-1.5"
+            className="flex-1 bg-stone-100 hover:bg-stone-200 text-stone-800 text-xs font-semibold py-2 px-3 rounded-md transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
           >
             <FileCheck className="w-3.5 h-3.5 text-emerald-700" />
-            <span>Harvest Passport</span>
+            <span>{t('marketplace.harvestPassport')}</span>
           </button>
 
           <button
             type="button"
             disabled={isOutOfStock || isExpiredSurplus}
             onClick={handleQuickAdd}
-            className={`py-2 px-3.5 rounded-md text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${
+            className={`py-2 px-3.5 rounded-md text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
               addedNotice
                 ? 'bg-emerald-800 text-white'
                 : isOutOfStock || isExpiredSurplus
@@ -238,7 +240,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
             }`}
           >
             <ShoppingBag className="w-3.5 h-3.5" />
-            <span>{addedNotice ? 'Added ✓' : 'Add'}</span>
+            <span>{addedNotice ? 'Added ✓' : t('marketplace.addToCart')}</span>
           </button>
 
           {onReport && (

@@ -15,6 +15,10 @@ import type {
   ProduceCategory,
   ProduceUnit,
   ProductStatus,
+  FarmerSalesSummary,
+  AdminPlatformStats,
+  AdminUserRow,
+  AdminActivityItem,
 } from '../shared/types.ts';
 
 export class MarketplaceService {
@@ -27,7 +31,10 @@ export class MarketplaceService {
   // --- Auth & Users ---
   getUserByEmail(email: string): (User & { password_hash: string }) | null {
     const row = this.db.prepare(`
-      SELECT id, email, password_hash, role, full_name as fullName, phone, created_at as createdAt
+      SELECT id, email, password_hash, role, full_name as fullName, phone,
+             preferred_language as preferredLanguage, locality,
+             buyer_type as buyerType, business_name as businessName,
+             created_at as createdAt
       FROM users WHERE lower(email) = lower(?)
     `).get(email) as any;
     return row || null;
@@ -35,7 +42,10 @@ export class MarketplaceService {
 
   getUserById(id: string): User | null {
     const row = this.db.prepare(`
-      SELECT id, email, role, full_name as fullName, phone, created_at as createdAt
+      SELECT id, email, role, full_name as fullName, phone,
+             preferred_language as preferredLanguage, locality,
+             buyer_type as buyerType, business_name as businessName,
+             created_at as createdAt
       FROM users WHERE id = ?
     `).get(id) as any;
     return row || null;
@@ -44,7 +54,8 @@ export class MarketplaceService {
   getFarmerProfileByUserId(userId: string): FarmerProfile | null {
     const row = this.db.prepare(`
       SELECT id, user_id as userId, farm_name as farmName, village_mandal as villageMandal,
-             district, bio, upi_id as upiId, phone, address, created_at as createdAt
+             district, bio, upi_id as upiId, phone, address,
+             main_categories as mainCategories, created_at as createdAt
       FROM farmer_profiles WHERE user_id = ?
     `).get(userId) as any;
     return row || null;
@@ -56,6 +67,10 @@ export class MarketplaceService {
     role: 'farmer' | 'buyer';
     fullName: string;
     phone: string;
+    preferredLanguage?: string;
+    locality?: string;
+    buyerType?: string;
+    businessName?: string;
     farmerDetails?: {
       farmName?: string;
       villageMandal?: string;
@@ -63,6 +78,7 @@ export class MarketplaceService {
       bio?: string;
       upiId?: string;
       address?: string;
+      mainCategories?: string;
     };
   }): User {
     const existing = this.getUserByEmail(params.email);
@@ -73,29 +89,34 @@ export class MarketplaceService {
     const userId = 'usr_' + crypto.randomUUID();
     const passwordHash = bcrypt.hashSync(params.password, 10);
     const now = new Date().toISOString();
+    const prefLang = params.preferredLanguage || 'en';
+    const locality = params.locality || (params.farmerDetails?.villageMandal) || 'Hyderabad';
+    const buyerType = params.buyerType || 'household';
+    const businessName = params.businessName || '';
 
     const insertUser = this.db.transaction(() => {
       this.db.prepare(`
-        INSERT INTO users (id, email, password_hash, role, full_name, phone, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `).run(userId, params.email.toLowerCase(), passwordHash, params.role, params.fullName, params.phone, now);
+        INSERT INTO users (id, email, password_hash, role, full_name, phone, preferred_language, locality, buyer_type, business_name, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(userId, params.email.toLowerCase(), passwordHash, params.role, params.fullName, params.phone, prefLang, locality, buyerType, businessName, now);
 
       if (params.role === 'farmer') {
         const profileId = 'fp_' + crypto.randomUUID();
         const details = params.farmerDetails || {};
         this.db.prepare(`
-          INSERT INTO farmer_profiles (id, user_id, farm_name, village_mandal, district, bio, upi_id, phone, address, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO farmer_profiles (id, user_id, farm_name, village_mandal, district, bio, upi_id, phone, address, main_categories, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
           profileId,
           userId,
           details.farmName || `${params.fullName}'s Natural Farm`,
-          details.villageMandal || 'Chevella Mandal',
+          details.villageMandal || locality || 'Chevella Mandal',
           details.district || 'Ranga Reddy',
           details.bio || 'Local grower committed to fresh harvest.',
           details.upiId || `${params.phone}@upi`,
           params.phone,
-          details.address || details.villageMandal || 'Hyderabad Rural',
+          details.address || details.villageMandal || locality || 'Hyderabad Rural',
+          details.mainCategories || 'vegetables',
           now
         );
       }
@@ -109,6 +130,10 @@ export class MarketplaceService {
       role: params.role,
       fullName: params.fullName,
       phone: params.phone,
+      preferredLanguage: prefLang as any,
+      locality,
+      buyerType: buyerType as any,
+      businessName,
       createdAt: now,
     };
   }
@@ -129,7 +154,10 @@ export class MarketplaceService {
   getSessionUser(token: string): User | null {
     if (!token) return null;
     const row = this.db.prepare(`
-      SELECT u.id, u.email, u.role, u.full_name as fullName, u.phone, u.created_at as createdAt, s.expires_at
+      SELECT u.id, u.email, u.role, u.full_name as fullName, u.phone,
+             u.preferred_language as preferredLanguage, u.locality,
+             u.buyer_type as buyerType, u.business_name as businessName,
+             u.created_at as createdAt, s.expires_at
       FROM sessions s
       JOIN users u ON s.user_id = u.id
       WHERE s.token = ?
@@ -146,6 +174,10 @@ export class MarketplaceService {
       role: row.role,
       fullName: row.fullName,
       phone: row.phone,
+      preferredLanguage: row.preferredLanguage || 'en',
+      locality: row.locality || '',
+      buyerType: row.buyerType || 'household',
+      businessName: row.businessName || '',
       createdAt: row.createdAt,
     };
   }
@@ -1116,6 +1148,319 @@ export class MarketplaceService {
     `).all() as any[];
 
     return rows;
+  }
+
+  // --- Profile Management ---
+  updateUserProfile(
+    userId: string,
+    data: {
+      fullName?: string;
+      phone?: string;
+      preferredLanguage?: string;
+      locality?: string;
+      buyerType?: string;
+      businessName?: string;
+    }
+  ): User {
+    const user = this.getUserById(userId);
+    if (!user) throw new Error('User not found');
+
+    const fields: string[] = [];
+    const values: any[] = [];
+
+    if (data.fullName !== undefined) {
+      fields.push('full_name = ?');
+      values.push(data.fullName.trim());
+    }
+    if (data.phone !== undefined) {
+      fields.push('phone = ?');
+      values.push(data.phone.trim());
+    }
+    if (data.preferredLanguage !== undefined) {
+      fields.push('preferred_language = ?');
+      values.push(data.preferredLanguage);
+    }
+    if (data.locality !== undefined) {
+      fields.push('locality = ?');
+      values.push(data.locality.trim());
+    }
+    if (data.buyerType !== undefined) {
+      fields.push('buyer_type = ?');
+      values.push(data.buyerType);
+    }
+    if (data.businessName !== undefined) {
+      fields.push('business_name = ?');
+      values.push(data.businessName.trim());
+    }
+
+    if (fields.length > 0) {
+      values.push(userId);
+      this.db.prepare(`UPDATE users SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+    }
+
+    return this.getUserById(userId)!;
+  }
+
+  updateFarmerProfile(
+    userId: string,
+    data: {
+      farmName?: string;
+      villageMandal?: string;
+      district?: string;
+      bio?: string;
+      upiId?: string;
+      phone?: string;
+      address?: string;
+      mainCategories?: string;
+    }
+  ): FarmerProfile {
+    const profile = this.getFarmerProfileByUserId(userId);
+    if (!profile) throw new Error('Farmer profile not found');
+
+    const fields: string[] = [];
+    const values: any[] = [];
+
+    if (data.farmName !== undefined) {
+      fields.push('farm_name = ?');
+      values.push(data.farmName.trim());
+    }
+    if (data.villageMandal !== undefined) {
+      fields.push('village_mandal = ?');
+      values.push(data.villageMandal.trim());
+    }
+    if (data.district !== undefined) {
+      fields.push('district = ?');
+      values.push(data.district.trim());
+    }
+    if (data.bio !== undefined) {
+      fields.push('bio = ?');
+      values.push(data.bio.trim());
+    }
+    if (data.upiId !== undefined) {
+      fields.push('upi_id = ?');
+      values.push(data.upiId.trim());
+    }
+    if (data.phone !== undefined) {
+      fields.push('phone = ?');
+      values.push(data.phone.trim());
+    }
+    if (data.address !== undefined) {
+      fields.push('address = ?');
+      values.push(data.address.trim());
+    }
+    if (data.mainCategories !== undefined) {
+      fields.push('main_categories = ?');
+      values.push(data.mainCategories.trim());
+    }
+
+    if (fields.length > 0) {
+      values.push(userId);
+      this.db.prepare(`UPDATE farmer_profiles SET ${fields.join(', ')} WHERE user_id = ?`).run(...values);
+    }
+
+    return this.getFarmerProfileByUserId(userId)!;
+  }
+
+  // --- Farmer Sales Analytics (Strictly scoped to authenticated farmer) ---
+  getFarmerSalesSummary(farmerId: string): FarmerSalesSummary {
+    const totalEarningsRow = this.db.prepare(`
+      SELECT COALESCE(SUM(total_amount_paise), 0) as totalEarningsPaise,
+             COUNT(*) as completedOrdersCount
+      FROM orders
+      WHERE farmer_id = ? AND status = 'completed'
+    `).get(farmerId) as any;
+
+    const pendingRow = this.db.prepare(`
+      SELECT COUNT(*) as pendingCount
+      FROM orders
+      WHERE farmer_id = ? AND status IN ('requested', 'accepted', 'ready')
+    `).get(farmerId) as any;
+
+    const activeListingsRow = this.db.prepare(`
+      SELECT COUNT(*) as activeCount
+      FROM products
+      WHERE farmer_id = ? AND status = 'active'
+    `).get(farmerId) as any;
+
+    const unitsSoldRow = this.db.prepare(`
+      SELECT COALESCE(SUM(oi.quantity), 0) as totalQuantity
+      FROM order_items oi
+      JOIN orders o ON oi.order_id = o.id
+      WHERE o.farmer_id = ? AND o.status = 'completed'
+    `).get(farmerId) as any;
+
+    const categoryRows = this.db.prepare(`
+      SELECT p.category,
+             COALESCE(SUM(oi.subtotal_paise), 0) as revenuePaise,
+             COUNT(DISTINCT o.id) as orderCount
+      FROM order_items oi
+      JOIN orders o ON oi.order_id = o.id
+      JOIN products p ON oi.product_id = p.id
+      WHERE o.farmer_id = ? AND o.status = 'completed'
+      GROUP BY p.category
+    `).all(farmerId) as any[];
+
+    // Latest 10 completed orders
+    const recentOrders = this.getOrdersForFarmer(farmerId)
+      .filter(o => o.status === 'completed')
+      .slice(0, 10);
+
+    return {
+      farmerId,
+      totalEarningsPaise: totalEarningsRow?.totalEarningsPaise || 0,
+      completedOrdersCount: totalEarningsRow?.completedOrdersCount || 0,
+      pendingOrdersCount: pendingRow?.pendingCount || 0,
+      activeListingsCount: activeListingsRow?.activeCount || 0,
+      totalUnitsSold: unitsSoldRow?.totalQuantity || 0,
+      salesByCategory: categoryRows.map(r => ({
+        category: r.category as ProduceCategory,
+        revenuePaise: r.revenuePaise,
+        count: r.orderCount,
+      })),
+      recentCompletedOrders: recentOrders,
+    };
+  }
+
+  // --- Admin Platform Overview & Auditing ---
+  getAdminPlatformStats(): AdminPlatformStats {
+    const farmerCountRow = this.db.prepare(`SELECT COUNT(*) as count FROM users WHERE role = 'farmer'`).get() as any;
+    const buyerCountRow = this.db.prepare(`SELECT COUNT(*) as count FROM users WHERE role = 'buyer'`).get() as any;
+    const listingCountRow = this.db.prepare(`SELECT COUNT(*) as count FROM products WHERE status = 'active'`).get() as any;
+    const hiddenListingRow = this.db.prepare(`SELECT COUNT(*) as count FROM products WHERE status = 'hidden'`).get() as any;
+    const ordersRow = this.db.prepare(`
+      SELECT COUNT(*) as totalOrders,
+             COALESCE(SUM(total_amount_paise), 0) as grossVolumePaise
+      FROM orders
+      WHERE status != 'cancelled'
+    `).get() as any;
+    const pendingReportsRow = this.db.prepare(`SELECT COUNT(*) as count FROM listing_reports WHERE status = 'pending'`).get() as any;
+
+    return {
+      totalFarmers: farmerCountRow?.count || 0,
+      totalBuyers: buyerCountRow?.count || 0,
+      totalActiveListings: listingCountRow?.count || 0,
+      hiddenListingsCount: hiddenListingRow?.count || 0,
+      totalOrders: ordersRow?.totalOrders || 0,
+      totalGrossVolumePaise: ordersRow?.grossVolumePaise || 0,
+      pendingReportsCount: pendingReportsRow?.count || 0,
+    };
+  }
+
+  getAdminUsersList(options?: { role?: string; search?: string }): AdminUserRow[] {
+    let query = `
+      SELECT u.id, u.email, u.role, u.full_name as fullName, u.phone,
+             u.preferred_language as preferredLanguage, u.locality,
+             u.buyer_type as buyerType, u.business_name as businessName,
+             u.created_at as createdAt,
+             fp.farm_name as farmName, fp.village_mandal as villageMandal,
+             (SELECT COUNT(*) FROM orders o WHERE o.buyer_id = u.id OR o.farmer_id = u.id) as orderCount,
+             (SELECT COUNT(*) FROM products p WHERE p.farmer_id = u.id) as productCount
+      FROM users u
+      LEFT JOIN farmer_profiles fp ON u.id = fp.user_id
+      WHERE 1=1
+    `;
+    const params: any[] = [];
+
+    if (options?.role && ['farmer', 'buyer', 'admin'].includes(options.role)) {
+      query += ` AND u.role = ?`;
+      params.push(options.role);
+    }
+    if (options?.search) {
+      query += ` AND (lower(u.full_name) LIKE ? OR lower(u.email) LIKE ? OR lower(u.locality) LIKE ?)`;
+      const term = `%${options.search.toLowerCase()}%`;
+      params.push(term, term, term);
+    }
+
+    query += ` ORDER BY u.created_at DESC LIMIT 100`;
+
+    const rows = this.db.prepare(query).all(...params) as any[];
+    return rows.map(r => ({
+      id: r.id,
+      email: r.email,
+      role: r.role,
+      fullName: r.fullName,
+      phone: r.phone,
+      preferredLanguage: r.preferredLanguage || 'en',
+      locality: r.locality || (r.villageMandal || 'Hyderabad'),
+      buyerType: r.buyerType || '',
+      businessName: r.businessName || '',
+      farmName: r.farmName || '',
+      villageMandal: r.villageMandal || '',
+      createdAt: r.createdAt,
+      orderCount: r.orderCount || 0,
+      productCount: r.productCount || 0,
+    }));
+  }
+
+  getAdminActivityLogs(): AdminActivityItem[] {
+    const items: AdminActivityItem[] = [];
+
+    // Order events
+    const orderEvents = this.db.prepare(`
+      SELECT oe.id, oe.from_status, oe.to_status, oe.notes, oe.created_at,
+             u.full_name as actor_name, o.order_code
+      FROM order_events oe
+      JOIN users u ON oe.actor_user_id = u.id
+      JOIN orders o ON oe.order_id = o.id
+      ORDER BY oe.created_at DESC
+      LIMIT 25
+    `).all() as any[];
+
+    for (const ev of orderEvents) {
+      items.push({
+        id: 'ev_' + ev.id,
+        type: 'order_status',
+        title: `Order #${ev.order_code} → ${ev.to_status.toUpperCase()}`,
+        description: ev.notes ? `${ev.notes} (Transition: ${ev.from_status} to ${ev.to_status})` : `Order status transitioned from ${ev.from_status} to ${ev.to_status}`,
+        actorName: ev.actor_name,
+        timestamp: ev.created_at,
+      });
+    }
+
+    // Moderation actions
+    const modActions = this.db.prepare(`
+      SELECT ma.id, ma.action, ma.reason, ma.created_at,
+             p.name as product_name, u.full_name as admin_name
+      FROM moderation_actions ma
+      JOIN products p ON ma.product_id = p.id
+      JOIN users u ON ma.admin_user_id = u.id
+      ORDER BY ma.created_at DESC
+      LIMIT 25
+    `).all() as any[];
+
+    for (const ma of modActions) {
+      items.push({
+        id: 'ma_' + ma.id,
+        type: 'moderation',
+        title: `Listing ${ma.action.toUpperCase()}: ${ma.product_name}`,
+        description: `Reason: ${ma.reason}`,
+        actorName: ma.admin_name,
+        timestamp: ma.created_at,
+      });
+    }
+
+    // Recent registrations
+    const newUsers = this.db.prepare(`
+      SELECT id, full_name, email, role, created_at
+      FROM users
+      ORDER BY created_at DESC
+      LIMIT 20
+    `).all() as any[];
+
+    for (const nu of newUsers) {
+      items.push({
+        id: 'user_' + nu.id,
+        type: 'user_joined',
+        title: `New ${nu.role.toUpperCase()} Registered`,
+        description: `${nu.full_name} (${nu.email})`,
+        actorName: nu.full_name,
+        timestamp: nu.created_at,
+      });
+    }
+
+    // Sort all chronologically descending
+    items.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    return items.slice(0, 50);
   }
 }
 

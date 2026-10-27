@@ -23,6 +23,10 @@ export function createDb(dbPath = DB_PATH) {
       role TEXT NOT NULL CHECK(role IN ('farmer', 'buyer', 'admin')),
       full_name TEXT NOT NULL,
       phone TEXT NOT NULL,
+      preferred_language TEXT DEFAULT 'en',
+      locality TEXT DEFAULT '',
+      buyer_type TEXT DEFAULT 'household',
+      business_name TEXT DEFAULT '',
       created_at TEXT NOT NULL
     );
 
@@ -36,6 +40,7 @@ export function createDb(dbPath = DB_PATH) {
       upi_id TEXT DEFAULT '',
       phone TEXT NOT NULL,
       address TEXT DEFAULT '',
+      main_categories TEXT DEFAULT 'vegetables',
       created_at TEXT NOT NULL
     );
 
@@ -161,6 +166,20 @@ export function createDb(dbPath = DB_PATH) {
     CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
     CREATE INDEX IF NOT EXISTS idx_stock_res_order ON stock_reservations(order_id);
   `);
+
+  // Safe migration checks for existing databases
+  const safeAddColumn = (table: string, columnDef: string) => {
+    try {
+      db.exec(`ALTER TABLE ${table} ADD COLUMN ${columnDef};`);
+    } catch (_) {
+      // Column already exists or table cannot be modified
+    }
+  };
+  safeAddColumn('users', 'preferred_language TEXT DEFAULT "en"');
+  safeAddColumn('users', 'locality TEXT DEFAULT ""');
+  safeAddColumn('users', 'buyer_type TEXT DEFAULT "household"');
+  safeAddColumn('users', 'business_name TEXT DEFAULT ""');
+  safeAddColumn('farmer_profiles', 'main_categories TEXT DEFAULT "vegetables"');
 
   return db;
 }

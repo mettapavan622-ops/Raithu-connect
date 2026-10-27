@@ -16,6 +16,10 @@ export interface User {
   role: UserRole;
   fullName: string;
   phone: string;
+  preferredLanguage?: 'en' | 'te' | 'hi';
+  locality?: string;
+  buyerType?: 'household' | 'retailer' | 'restaurant' | 'wholesaler';
+  businessName?: string;
   createdAt: string;
 }
 
@@ -29,7 +33,55 @@ export interface FarmerProfile {
   upiId?: string;
   phone: string;
   address: string;
+  mainCategories?: string;
   createdAt: string;
+}
+
+export interface FarmerSalesSummary {
+  farmerId: string;
+  totalEarningsPaise: number;
+  completedOrdersCount: number;
+  pendingOrdersCount: number;
+  activeListingsCount: number;
+  totalUnitsSold: number;
+  salesByCategory: { category: ProduceCategory; revenuePaise: number; count: number }[];
+  recentCompletedOrders: Order[];
+}
+
+export interface AdminPlatformStats {
+  totalFarmers: number;
+  totalBuyers: number;
+  totalActiveListings: number;
+  totalOrders: number;
+  totalGrossVolumePaise: number;
+  pendingReportsCount: number;
+  hiddenListingsCount: number;
+}
+
+export interface AdminUserRow {
+  id: string;
+  email: string;
+  role: UserRole;
+  fullName: string;
+  phone: string;
+  preferredLanguage: string;
+  locality: string;
+  buyerType?: string;
+  businessName?: string;
+  farmName?: string;
+  villageMandal?: string;
+  createdAt: string;
+  orderCount: number;
+  productCount: number;
+}
+
+export interface AdminActivityItem {
+  id: string;
+  type: 'order_status' | 'moderation' | 'user_joined' | 'product_created';
+  title: string;
+  description: string;
+  actorName: string;
+  timestamp: string;
 }
 
 export interface Product {

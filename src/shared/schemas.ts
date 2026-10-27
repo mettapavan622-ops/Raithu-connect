@@ -6,6 +6,8 @@ export const registerSchema = z.object({
   fullName: z.string().min(2, 'Full name is required'),
   phone: z.string().min(10, 'Valid 10-digit phone number is required'),
   role: z.enum(['farmer', 'buyer']),
+  preferredLanguage: z.enum(['en', 'te', 'hi']).default('en').optional(),
+  locality: z.string().optional().default(''),
   // Farmer specific optional fields on registration
   farmName: z.string().optional(),
   villageMandal: z.string().optional(),
@@ -13,9 +15,19 @@ export const registerSchema = z.object({
   bio: z.string().optional(),
   upiId: z.string().optional(),
   address: z.string().optional(),
+  mainCategories: z.string().optional(),
+  // Buyer specific optional fields on registration
+  buyerType: z.enum(['household', 'retailer', 'restaurant', 'wholesaler']).optional().default('household'),
+  businessName: z.string().optional(),
 });
 
 export const loginSchema = z.object({
+  email: z.string().email('Please enter a valid email address'),
+  password: z.string().min(1, 'Password is required'),
+  expectedRole: z.enum(['farmer', 'buyer', 'admin']).optional(),
+});
+
+export const adminLoginSchema = z.object({
   email: z.string().email('Please enter a valid email address'),
   password: z.string().min(1, 'Password is required'),
 });

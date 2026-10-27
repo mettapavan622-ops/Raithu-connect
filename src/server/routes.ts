@@ -7,6 +7,7 @@ import { generateListingDraft } from './ai.ts';
 import {
   registerSchema,
   loginSchema,
+  adminLoginSchema,
   productCreateSchema,
   stockAdjustmentSchema,
   checkoutSchema,
@@ -94,12 +95,31 @@ export function createApiRouter(service: MarketplaceService = marketplaceService
     };
   };
 
+  // Rate limiting map for login
+  const loginAttempts = new Map<string, { count: number; resetAt: number }>();
+  const checkRateLimit = (key: string): boolean => {
+    const now = Date.now();
+    const record = loginAttempts.get(key);
+    if (!record || now > record.resetAt) {
+      loginAttempts.set(key, { count: 1, resetAt: now + 60_000 });
+      return true;
+    }
+    if (record.count >= 10) {
+      return false;
+    }
+    record.count += 1;
+    return true;
+  };
+  const resetRateLimit = (key: string) => {
+    loginAttempts.delete(key);
+  };
+
   // Apply CSRF check
   router.use(verifyCsrf);
 
   // --- Auth Endpoints ---
 
-  // Register (Farmers or Buyers only)
+  // Register (Farmers or Buyers only - Admin registration strictly prohibited)
   router.post('/auth/register', (req, res) => {
     const parseResult = registerSchema.safeParse(req.body);
     if (!parseResult.success) {
@@ -110,7 +130,26 @@ export function createApiRouter(service: MarketplaceService = marketplaceService
       });
     }
 
-    const { email, password, role, fullName, phone, ...rest } = parseResult.data;
+    const {
+      email,
+      password,
+      role,
+      fullName,
+      phone,
+      preferredLanguage,
+      locality,
+      buyerType,
+      businessName,
+      ...farmerDetails
+    } = parseResult.data;
+
+    // Guard: Admin accounts cannot be registered publicly
+    if ((role as string) === 'admin') {
+      return res.status(403).json({
+        error: 'ADMIN_REGISTRATION_FORBIDDEN',
+        message: 'Administrator accounts cannot be created via public registration.',
+      });
+    }
 
     try {
       const user = service.createUser({
@@ -119,7 +158,14 @@ export function createApiRouter(service: MarketplaceService = marketplaceService
         role: role as 'farmer' | 'buyer',
         fullName,
         phone,
-        farmerDetails: role === 'farmer' ? rest : undefined,
+        preferredLanguage: preferredLanguage || 'en',
+        locality: locality || farmerDetails.villageMandal || 'Hyderabad',
+        buyerType: buyerType || 'household',
+        businessName: businessName || '',
+        farmerDetails: role === 'farmer' ? {
+          ...farmerDetails,
+          villageMandal: farmerDetails.villageMandal || locality,
+        } : undefined,
       });
 
       const { token } = service.createSession(user.id);
@@ -134,17 +180,27 @@ export function createApiRouter(service: MarketplaceService = marketplaceService
         user,
         farmerProfile,
         csrfToken,
+        message: 'Registration successful! Welcome to RaithuConnect.',
       });
     } catch (err: any) {
       return res.status(400).json({ error: 'REGISTRATION_FAILED', message: err.message });
     }
   });
 
-  // Login
+  // Login (Buyer & Farmer portal with role mismatch verification)
   router.post('/auth/login', (req, res) => {
     const parseResult = loginSchema.safeParse(req.body);
     if (!parseResult.success) {
       return res.status(400).json({ error: 'VALIDATION_ERROR', message: 'Valid email and password required' });
+    }
+
+    const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
+    const rateKey = `${clientIp}_${parseResult.data.email.toLowerCase()}`;
+    if (!checkRateLimit(rateKey)) {
+      return res.status(429).json({
+        error: 'TOO_MANY_ATTEMPTS',
+        message: 'Too many failed login attempts. Please wait 1 minute before trying again.',
+      });
     }
 
     const userWithHash = service.getUserByEmail(parseResult.data.email);
@@ -157,17 +213,35 @@ export function createApiRouter(service: MarketplaceService = marketplaceService
       return res.status(401).json({ error: 'INVALID_CREDENTIALS', message: 'Invalid email or password' });
     }
 
+    // Role verification & mismatch handling
+    const expectedRole = parseResult.data.expectedRole;
+
+    // Admin account trying to sign in through public login
+    if (userWithHash.role === 'admin') {
+      return res.status(403).json({
+        error: 'ACCOUNT_ROLE_MISMATCH',
+        message: 'This account possesses platform administrative privileges. Please log in through the official Admin Portal.',
+        actualRole: 'admin',
+        expectedRole,
+      });
+    }
+
+    // Mismatch between selected login tab and actual account role
+    if (expectedRole && userWithHash.role !== expectedRole) {
+      return res.status(409).json({
+        error: 'ACCOUNT_ROLE_MISMATCH',
+        message: `This account is registered as a ${userWithHash.role === 'farmer' ? 'Farmer' : 'Buyer'} account, but you selected ${expectedRole === 'farmer' ? 'Farmer' : 'Buyer'} sign-in.`,
+        actualRole: userWithHash.role,
+        expectedRole,
+      });
+    }
+
+    resetRateLimit(rateKey);
+
     const { token } = service.createSession(userWithHash.id);
     const csrfToken = setAuthCookies(res, token);
 
-    const user: User = {
-      id: userWithHash.id,
-      email: userWithHash.email,
-      role: userWithHash.role,
-      fullName: userWithHash.fullName,
-      phone: userWithHash.phone,
-      createdAt: userWithHash.createdAt,
-    };
+    const user = service.getUserById(userWithHash.id)!;
 
     let farmerProfile = null;
     if (user.role === 'farmer') {
@@ -175,6 +249,49 @@ export function createApiRouter(service: MarketplaceService = marketplaceService
     }
 
     return res.json({ user, farmerProfile, csrfToken });
+  });
+
+  // Dedicated Admin Login (/admin/login)
+  router.post('/admin/login', (req, res) => {
+    const parseResult = adminLoginSchema.safeParse(req.body);
+    if (!parseResult.success) {
+      return res.status(400).json({ error: 'VALIDATION_ERROR', message: 'Valid administrator email and password required' });
+    }
+
+    const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
+    const rateKey = `admin_${clientIp}_${parseResult.data.email.toLowerCase()}`;
+    if (!checkRateLimit(rateKey)) {
+      return res.status(429).json({
+        error: 'TOO_MANY_ATTEMPTS',
+        message: 'Too many attempts. Administrative portal locked for 1 minute.',
+      });
+    }
+
+    const userWithHash = service.getUserByEmail(parseResult.data.email);
+    if (!userWithHash) {
+      return res.status(401).json({ error: 'INVALID_CREDENTIALS', message: 'Invalid administrator credentials' });
+    }
+
+    const match = bcrypt.compareSync(parseResult.data.password, userWithHash.password_hash);
+    if (!match) {
+      return res.status(401).json({ error: 'INVALID_CREDENTIALS', message: 'Invalid administrator credentials' });
+    }
+
+    if (userWithHash.role !== 'admin') {
+      return res.status(403).json({
+        error: 'ADMIN_ACCESS_REQUIRED',
+        message: 'Access Denied: This portal is strictly restricted to authorized platform administrators.',
+        actualRole: userWithHash.role,
+      });
+    }
+
+    resetRateLimit(rateKey);
+
+    const { token } = service.createSession(userWithHash.id);
+    const csrfToken = setAuthCookies(res, token);
+    const user = service.getUserById(userWithHash.id)!;
+
+    return res.json({ user, farmerProfile: null, csrfToken });
   });
 
   // Demo Login (Explicit backend authentication for seeded accounts)
@@ -199,14 +316,7 @@ export function createApiRouter(service: MarketplaceService = marketplaceService
     const { token } = service.createSession(userWithHash.id);
     const csrfToken = setAuthCookies(res, token);
 
-    const user: User = {
-      id: userWithHash.id,
-      email: userWithHash.email,
-      role: userWithHash.role,
-      fullName: userWithHash.fullName,
-      phone: userWithHash.phone,
-      createdAt: userWithHash.createdAt,
-    };
+    const user = service.getUserById(userWithHash.id)!;
 
     let farmerProfile = null;
     if (user.role === 'farmer') {
@@ -237,6 +347,59 @@ export function createApiRouter(service: MarketplaceService = marketplaceService
     return res.json({ user, farmerProfile, csrfToken });
   });
 
+  // Update authenticated user profile and language preference
+  router.put('/auth/profile', requireAuth, (req: AuthenticatedRequest, res) => {
+    try {
+      const updated = service.updateUserProfile(req.user!.id, {
+        fullName: req.body.fullName,
+        phone: req.body.phone,
+        preferredLanguage: req.body.preferredLanguage,
+        locality: req.body.locality,
+        buyerType: req.body.buyerType,
+        businessName: req.body.businessName,
+      });
+
+      let farmerProfile = null;
+      if (updated.role === 'farmer') {
+        farmerProfile = service.getFarmerProfileByUserId(updated.id);
+      }
+
+      return res.json({ user: updated, farmerProfile, message: 'Profile updated successfully' });
+    } catch (err: any) {
+      return res.status(400).json({ error: 'PROFILE_UPDATE_FAILED', message: err.message });
+    }
+  });
+
+  // Update farmer farm details
+  router.put('/farmer/profile', requireAuth, requireRole(['farmer']), (req: AuthenticatedRequest, res) => {
+    try {
+      const updatedProfile = service.updateFarmerProfile(req.user!.id, {
+        farmName: req.body.farmName,
+        villageMandal: req.body.villageMandal,
+        district: req.body.district,
+        bio: req.body.bio,
+        upiId: req.body.upiId,
+        phone: req.body.phone,
+        address: req.body.address,
+        mainCategories: req.body.mainCategories,
+      });
+
+      return res.json({ farmerProfile: updatedProfile, message: 'Farm profile updated successfully' });
+    } catch (err: any) {
+      return res.status(400).json({ error: 'FARM_PROFILE_UPDATE_FAILED', message: err.message });
+    }
+  });
+
+  // Farmer Sales Analytics (Strictly scoped to authenticated farmer)
+  router.get('/farmer/sales', requireAuth, requireRole(['farmer']), (req: AuthenticatedRequest, res) => {
+    try {
+      const sales = service.getFarmerSalesSummary(req.user!.id);
+      return res.json({ sales });
+    } catch (err: any) {
+      return res.status(500).json({ error: 'SALES_FETCH_FAILED', message: err.message });
+    }
+  });
+
   // Logout
   router.post('/auth/logout', (req: AuthenticatedRequest, res) => {
     const sessionToken = req.cookies?.rc_session || (req.headers['authorization']?.replace('Bearer ', ''));
@@ -245,7 +408,7 @@ export function createApiRouter(service: MarketplaceService = marketplaceService
     }
     res.clearCookie('rc_session', { path: '/' });
     res.clearCookie('XSRF-TOKEN', { path: '/' });
-    return res.json({ success: true });
+    return res.json({ success: true, message: 'Logged out successfully' });
   });
 
   // --- Listings / Products Endpoints ---
@@ -534,6 +697,48 @@ export function createApiRouter(service: MarketplaceService = marketplaceService
     try {
       const auditTrail = service.getModerationAuditTrail();
       return res.json({ auditTrail });
+    } catch (err: any) {
+      return res.status(500).json({ error: 'FETCH_FAILED', message: err.message });
+    }
+  });
+
+  router.get('/admin/stats', requireAuth, requireRole(['admin']), (req, res) => {
+    try {
+      const stats = service.getAdminPlatformStats();
+      return res.json({ stats });
+    } catch (err: any) {
+      return res.status(500).json({ error: 'FETCH_FAILED', message: err.message });
+    }
+  });
+
+  router.get('/admin/users', requireAuth, requireRole(['admin']), (req, res) => {
+    try {
+      const roleFilter = req.query.role as string | undefined;
+      const search = req.query.search as string | undefined;
+      const users = service.getAdminUsersList({ role: roleFilter, search });
+      return res.json({ users });
+    } catch (err: any) {
+      return res.status(500).json({ error: 'FETCH_FAILED', message: err.message });
+    }
+  });
+
+  router.get('/admin/activity', requireAuth, requireRole(['admin']), (req, res) => {
+    try {
+      const activities = service.getAdminActivityLogs();
+      return res.json({ activities });
+    } catch (err: any) {
+      return res.status(500).json({ error: 'FETCH_FAILED', message: err.message });
+    }
+  });
+
+  router.get('/admin/listings', requireAuth, requireRole(['admin']), (req, res) => {
+    try {
+      const statusFilter = req.query.status as string | undefined;
+      let products = service.getProducts({ includeHidden: true });
+      if (statusFilter && ['active', 'hidden', 'rejected'].includes(statusFilter)) {
+        products = products.filter(p => p.status === statusFilter);
+      }
+      return res.json({ products });
     } catch (err: any) {
       return res.status(500).json({ error: 'FETCH_FAILED', message: err.message });
     }
