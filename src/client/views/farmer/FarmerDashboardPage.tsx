@@ -25,6 +25,7 @@ import {
   ShieldCheck,
   Phone
 } from 'lucide-react';
+import { HarvestYieldChart } from '../../components/HarvestYieldChart';
 
 interface FarmerDashboardPageProps {
   currentSubpath?: string;
@@ -310,6 +311,12 @@ export const FarmerDashboardPage: React.FC<FarmerDashboardPageProps> = ({
               <span className="text-[11px] text-emerald-800 mt-1 block">Strictly from completed orders</span>
             </div>
           </div>
+
+          {/* Historical Harvest Yield Trends & Future Planting Advisory (Recharts) */}
+          <HarvestYieldChart
+            products={products}
+            onOpenCreateProduct={onOpenCreateProduct}
+          />
 
           {/* Incoming Orders Preview */}
           <div className="bg-white rounded-2xl border border-stone-200 shadow-2xs p-5">
@@ -787,6 +794,12 @@ export const FarmerDashboardPage: React.FC<FarmerDashboardPageProps> = ({
               <p className="text-xs text-stone-600">No category breakdown available yet.</p>
             )}
           </div>
+
+          {/* Historical Harvest Yield Trends & Future Planting Advisory */}
+          <HarvestYieldChart
+            products={products}
+            onOpenCreateProduct={onOpenCreateProduct}
+          />
         </div>
       )}
 
